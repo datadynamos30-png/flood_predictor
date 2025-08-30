@@ -2,9 +2,9 @@ streamlit
 tensorflow
 pillow
 numpy
+gdown
 folium
 streamlit-folium
-geopandas
-gdown
+
 
 
