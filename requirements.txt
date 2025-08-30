@@ -6,6 +6,8 @@ scipy==1.16.1
 joblib==1.5.2
 threadpoolctl==3.6.0
 scikit-learn==0.23.1
+python-3.9.19
+
 
 
 
