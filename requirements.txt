@@ -1,0 +1,6 @@
+streamlit
+tensorflow
+folium
+geopandas
+numpy
+pillow
