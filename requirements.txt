@@ -4,3 +4,9 @@ folium
 geopandas
 numpy
 pillow
+streamlit
+tensorflow
+folium
+geopandas
+numpy
+pillow
