@@ -1,11 +1,13 @@
 streamlit
 tensorflow
+keras
 pillow
 numpy
 folium
 streamlit-folium
 geopandas
 gdown
+
 
 
 
