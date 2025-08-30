@@ -13,7 +13,8 @@ from streamlit_folium import st_folium
 # ----------------------------
 st.set_page_config(page_title="🌊 Flood Predictor", layout="wide")
 
-MODEL_ID = "1zoECslC9YqUW7DLDw2uFKyR3dIItjAbf"  # Google Drive zip file ID
+# Google Drive file (set sharing → Anyone with the link → Viewer)
+MODEL_ID = "1zoECslC9YqUW7DLDw2uFKyR3dIItjAbf"   # Change this if new link
 MODEL_ZIP = "flood_model.zip"
 MODEL_DIR = "flood_model"
 
@@ -22,35 +23,47 @@ MODEL_DIR = "flood_model"
 # ----------------------------
 @st.cache_resource
 def load_flood_model():
+    # Download model zip if not already present
     if not os.path.exists(MODEL_ZIP):
         url = f"https://drive.google.com/uc?id={MODEL_ID}"
+        st.info("⬇️ Downloading model from Google Drive...")
         gdown.download(url, MODEL_ZIP, quiet=False)
 
+    # Extract if not already extracted
     if not os.path.exists(MODEL_DIR):
         with zipfile.ZipFile(MODEL_ZIP, 'r') as zip_ref:
             zip_ref.extractall(MODEL_DIR)
 
+    # Look for supported formats
     keras_files = list(pathlib.Path(MODEL_DIR).glob("*.keras"))
     h5_files = list(pathlib.Path(MODEL_DIR).glob("*.h5"))
     saved_model_dirs = [p for p in pathlib.Path(MODEL_DIR).iterdir() if p.is_dir()]
 
     if keras_files:
+        st.success(f"✅ Found Keras model: {keras_files[0].name}")
         return load_model(str(keras_files[0]))
-    elif h5_files:
-        return load_model(str(h5_files[0]))
-    elif saved_model_dirs:
-        return TFSMLayer(str(saved_model_dirs[0]), call_endpoint="serving_default")
-    else:
-        raise ValueError("❌ No supported model format found in extracted zip.")
 
+    elif h5_files:
+        st.success(f"✅ Found H5 model: {h5_files[0].name}")
+        return load_model(str(h5_files[0]))
+
+    elif saved_model_dirs:
+        st.success(f"✅ Found SavedModel directory: {saved_model_dirs[0].name}")
+        return TFSMLayer(str(saved_model_dirs[0]), call_endpoint="serving_default")
+
+    else:
+        st.error("❌ No supported model format found in the extracted zip.")
+        raise ValueError("Model not found. Ensure the zip contains .keras, .h5, or a SavedModel folder.")
+
+# Load the model
 model = load_flood_model()
 
 # ----------------------------
 # APP HEADER
 # ----------------------------
 st.title("🌊 Flood Predictor")
-st.markdown("Upload a **satellite image** or select a **state** to predict flood risk. \
-            View predictions on an **interactive OSM map** 🗺️")
+st.markdown("Upload a **satellite image** or select a **state** to predict flood risk. "
+            "View predictions on an **interactive OSM map** 🗺️")
 
 # ----------------------------
 # INPUT OPTIONS
@@ -72,7 +85,12 @@ def predict_flood(image: Image.Image):
     img_array = np.array(img) / 255.0
     img_array = np.expand_dims(img_array, axis=0)
 
-    preds = model(img_array, training=False) if isinstance(model, TFSMLayer) else model.predict(img_array)
+    # Handle both Sequential and TFSMLayer models
+    if isinstance(model, TFSMLayer):
+        preds = model(img_array, training=False)
+    else:
+        preds = model.predict(img_array)
+
     prob = float(preds[0][0]) if preds.ndim == 2 else float(preds[0])
     return prob
 
