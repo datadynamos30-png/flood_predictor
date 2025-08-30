@@ -1,78 +1,43 @@
 import streamlit as st
-import os
-import zipfile
-import gdown
+import tensorflow as tf
+from keras.models import load_model
+from keras.layers import TFSMLayer
 import numpy as np
-from tensorflow import keras
-from keras.preprocessing import image
-import folium
-from streamlit_folium import st_folium
+import gdown, zipfile, os, pathlib
 
-# ==============================
-# CONFIG
-# ==============================
-# Replace with your Google Drive FILE ID
-MODEL_ID = "1mF8NmMClUbKXYJoDdW3OYHhwiSknI5hk"
-ZIP_PATH = "flood_model.zip"
-MODEL_DIR = "fine_tuned_flood_detection_model"
+# Google Drive ZIP ID (from your link)
+MODEL_ID = "1zoECslC9YqUW7DLDw2uFKyR3dIItjAbf"
+MODEL_ZIP = "flood_model.zip"
+MODEL_DIR = "flood_model"
 
-# ==============================
-# DOWNLOAD + UNZIP MODEL
-# ==============================
 @st.cache_resource
 def load_flood_model():
-    if not os.path.exists(MODEL_DIR):
-        st.write("📥 Downloading model from Google Drive...")
+    # Step 1: Download model zip
+    if not os.path.exists(MODEL_ZIP):
         url = f"https://drive.google.com/uc?id={MODEL_ID}"
-        gdown.download(url, ZIP_PATH, quiet=False)
+        gdown.download(url, MODEL_ZIP, quiet=False)
 
-        st.write("📂 Extracting model...")
-        with zipfile.ZipFile(ZIP_PATH, "r") as zip_ref:
-            zip_ref.extractall(".")
+    # Step 2: Extract model if not already
+    if not os.path.exists(MODEL_DIR):
+        with zipfile.ZipFile(MODEL_ZIP, 'r') as zip_ref:
+            zip_ref.extractall(MODEL_DIR)
 
-    st.success("✅ Model ready to use!")
-    return keras.layers.TFSMLayer(MODEL_DIR, call_endpoint="serving_default")
+    # Step 3: Detect model format
+    keras_files = list(pathlib.Path(MODEL_DIR).glob("*.keras"))
+    h5_files = list(pathlib.Path(MODEL_DIR).glob("*.h5"))
+    saved_model_dirs = [p for p in pathlib.Path(MODEL_DIR).iterdir() if p.is_dir()]
 
-model = load_flood_model()
-
-# ==============================
-# STREAMLIT APP UI
-# ==============================
-st.set_page_config(page_title="🌊 Flood Predictor", layout="wide")
-
-st.title("🌊 Flood Predictor")
-st.write("Upload an image and select a state to predict flood risk.")
-
-# Sidebar Upload + State Select
-st.sidebar.header("Upload & Select Location")
-uploaded_file = st.sidebar.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
-state = st.sidebar.selectbox("Select a State", [
-    "Andhra Pradesh", "Bihar", "Karnataka", "Kerala", "Maharashtra"
-])
-
-# Map
-st.subheader("🗺️ Location Map")
-m = folium.Map(location=[20.5937, 78.9629], zoom_start=5)
-folium.Marker(location=[20.5937, 78.9629], popup="India").add_to(m)
-st_map = st_folium(m, width=700, height=400)
-
-# Prediction
-if uploaded_file is not None:
-    img = image.load_img(uploaded_file, target_size=(224, 224))
-    img_array = image.img_to_array(img)
-    img_array = np.expand_dims(img_array, axis=0)
-
-    preds = model(img_array)
-    try:
-        pred_val = float(preds[0][0])
-    except:
-        pred_val = float(preds)
-
-    st.subheader("📊 Prediction Result")
-    if pred_val > 0.5:
-        st.error(f"⚠️ High Flood Risk detected in {state} (Score: {pred_val:.2f})")
+    if keras_files:
+        st.success("Loaded .keras model ✅")
+        return load_model(str(keras_files[0]))
+    elif h5_files:
+        st.success("Loaded .h5 model ✅")
+        return load_model(str(h5_files[0]))
+    elif saved_model_dirs:
+        st.success("Loaded SavedModel ✅ (using TFSMLayer)")
+        return TFSMLayer(str(saved_model_dirs[0]), call_endpoint="serving_default")
     else:
-        st.success(f"✅ Low Flood Risk in {state} (Score: {pred_val:.2f})")
+        raise ValueError("❌ No supported model format found in extracted zip.")
 
-    st.image(uploaded_file, caption="Uploaded Image", use_column_width=True)
-
+# Load model
+model = load_flood_model()
