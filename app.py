@@ -1,92 +1,55 @@
-import streamlit as st
+
+    import streamlit as st
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.preprocessing import image
 import folium
-from folium.plugins import HeatMap
-from PIL import Image as PILImage
-from io import BytesIO
+from streamlit_folium import st_folium
 import geopandas as gpd
 
-# Load pre-trained model
-model_path = 'fine_tuned_flood_detection_model'  # Update the path if needed
-model = tf.keras.models.load_model(model_path)
+# Load model once
+@st.cache_resource
+def load_model():
+    return tf.keras.models.load_model("fine_tuned_flood_detection_model.keras")
 
-# Define states for the selection
-states = ["Assam", "Kerala", "Bihar"]
+model = load_model()
 
-# Function to load and preprocess the image for prediction
-def prepare_image(img_path):
-    img = image.load_img(img_path, target_size=(224, 224))  # Resize to match model input size
-    img_array = image.img_to_array(img)
-    img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
-    img_array /= 255.0  # Normalize to [0, 1] if it was normalized during training
-    return img_array
+# Streamlit UI
+st.set_page_config(page_title="Flood Predictor", page_icon="🌊", layout="wide")
 
-# Function to make flood prediction
-def predict_flood(img_array):
-    prediction = model.predict(img_array)
-    return prediction
+st.title("🌊 Flood Predictor")
+st.write("Upload an image and select a state to predict flood risk, visualized on a map.")
 
-# Function to display OSM layers on the map
-def display_osm_map(state):
-    # Use OSM to create a map and add layers for roads, hospitals, and schools
-    if state == "Assam":
-        coordinates = [26.1, 92.5]  # Assam center coordinates
-    elif state == "Kerala":
-        coordinates = [10.5, 76.8]  # Kerala center coordinates
-    else:
-        coordinates = [25.0, 85.0]  # Bihar center coordinates
+# Sidebar
+state = st.sidebar.selectbox(
+    "Select a State",
+    ["Andhra Pradesh", "Bihar", "Kerala", "Maharashtra", "Odisha", "Uttar Pradesh"]
+)
+uploaded_file = st.file_uploader("Upload an Image", type=["jpg", "jpeg", "png"])
 
-    # Map setup
-    m = folium.Map(location=coordinates, zoom_start=6)
-    
-    # Example OSM layers (You can fetch these from OSM APIs or your dataset)
-    HeatMap([[coordinates[0], coordinates[1]]]).add_to(m)
-    
-    folium.Marker(coordinates, popup=f"{state} Hospital").add_to(m)
-    folium.Marker([coordinates[0] + 0.1, coordinates[1] + 0.1], popup=f"{state} School").add_to(m)
-    
-    return m
+if uploaded_file:
+    # Show uploaded image
+    st.image(uploaded_file, caption="Uploaded Image", use_container_width=True)
 
-# Streamlit user interface
-def main():
-    st.title("Flood Predictor")
-    st.write("### Predict flood status based on uploaded image")
+    # Preprocess image
+    img = image.load_img(uploaded_file, target_size=(224, 224))
+    img_array = image.img_to_array(img) / 255.0
+    img_array = np.expand_dims(img_array, axis=0)
 
-    # User selects state
-    state = st.selectbox("Select a State", states)
+    # Predict
+    preds = model.predict(img_array)
+    label = "🌊 Flooding" if preds[0][0] > 0.5 else "✅ No Flooding"
 
-    uploaded_image = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+    st.subheader("Prediction Result")
+    st.success(f"**{label}** (Confidence: {preds[0][0]:.2f})")
 
-    if uploaded_image is not None:
-        # Process the uploaded image for prediction
-        img_path = f"/content/{uploaded_image.name}"
-        with open(img_path, "wb") as f:
-            f.write(uploaded_image.getbuffer())
-        
-        img_array = prepare_image(img_path)
-        
-        # Display the image
-        st.image(img_path, caption="Uploaded Image", use_column_width=True)
-        
-        # Predict flood status
-        prediction = predict_flood(img_array)
-        
-        if prediction[0] > 0.5:
-            st.write("🚨 Flood detected!")
-        else:
-            st.write("✅ No flood detected!")
-        
-        # Display the OSM map with flood information
-        st.subheader(f"OSM Map for {state} with Flood Data")
-        osm_map = display_osm_map(state)
-        folium_static(osm_map)
-        
-        # Add animation effects
-        st.write("### Flood Impact Animation")
-        st.write("This animation shows the estimated impact of flood based on the infrastructure layers and flood prediction.")
+    # Map visualization
+    st.subheader("📍 Location Map")
+    m = folium.Map(location=[20.5937, 78.9629], zoom_start=5, tiles="CartoDB positron")
+    folium.Marker(
+        location=[20.5937, 78.9629], 
+        popup=f"{state} - {label}", 
+        icon=folium.Icon(color="blue" if "No" in label else "red", icon="info-sign")
+    ).add_to(m)
+    st_folium(m, width=700, height=500)
 
-# Run the Streamlit app
-if __name__ == "__main__":
-    main()
