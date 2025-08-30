@@ -1,136 +1,97 @@
-import streamlit as st
-import tensorflow as tf
-from keras.models import load_model
-from keras.layers import TFSMLayer
-import numpy as np
-from PIL import Image
-import gdown, zipfile, os, pathlib
-import folium
-from streamlit_folium import st_folium
+"""Web app."""
+import flask
+from flask import Flask, render_template, request, redirect, url_for
 
-# ----------------------------
-# CONFIG
-# ----------------------------
-st.set_page_config(page_title="🌊 Flood Predictor", layout="wide")
+import pickle
+import base64
+from training import prediction
+import requests
+app = flask.Flask(__name__)
 
-# Google Drive file (set sharing → Anyone with the link → Viewer)
-MODEL_ID = "1zoECslC9YqUW7DLDw2uFKyR3dIItjAbf"   # Change this if new link
-MODEL_ZIP = "flood_model.zip"
-MODEL_DIR = "flood_model"
+data = [{'name':'Delhi', "sel": "selected"}, {'name':'Mumbai', "sel": ""}, {'name':'Kolkata', "sel": ""}, {'name':'Bangalore', "sel": ""}, {'name':'Chennai', "sel": ""}]
+# data = [{'name':'India', "sel": ""}]
+months = [{"name":"May", "sel": ""}, {"name":"June", "sel": ""}, {"name":"July", "sel": "selected"}]
+cities = [{'name':'Delhi', "sel": "selected"}, {'name':'Mumbai', "sel": ""}, {'name':'Kolkata', "sel": ""}, {'name':'Bangalore', "sel": ""}, {'name':'Chennai', "sel": ""}, {'name':'New York', "sel": ""}, {'name':'Los Angeles', "sel": ""}, {'name':'London', "sel": ""}, {'name':'Paris', "sel": ""}, {'name':'Sydney', "sel": ""}, {'name':'Beijing', "sel": ""}]
 
-# ----------------------------
-# MODEL LOADING
-# ----------------------------
-@st.cache_resource
-def load_flood_model():
-    # Download model zip if not already present
-    if not os.path.exists(MODEL_ZIP):
-        url = f"https://drive.google.com/uc?id={MODEL_ID}"
-        st.info("⬇️ Downloading model from Google Drive...")
-        gdown.download(url, MODEL_ZIP, quiet=False)
+model = pickle.load(open("model.pickle", 'rb'))
 
-    # Extract if not already extracted
-    if not os.path.exists(MODEL_DIR):
-        with zipfile.ZipFile(MODEL_ZIP, 'r') as zip_ref:
-            zip_ref.extractall(MODEL_DIR)
+@app.route("/")
+@app.route('/index.html')
+def index() -> str:
+    """Base page."""
+    return flask.render_template("index.html")
 
-    # Look for supported formats
-    keras_files = list(pathlib.Path(MODEL_DIR).glob("*.keras"))
-    h5_files = list(pathlib.Path(MODEL_DIR).glob("*.h5"))
-    saved_model_dirs = [p for p in pathlib.Path(MODEL_DIR).iterdir() if p.is_dir()]
+@app.route('/plots.html')
+def plots():
+    return render_template('plots.html')
 
-    if keras_files:
-        st.success(f"✅ Found Keras model: {keras_files[0].name}")
-        return load_model(str(keras_files[0]))
+@app.route('/heatmaps.html')
+def heatmaps():
+    return render_template('heatmaps.html')
 
-    elif h5_files:
-        st.success(f"✅ Found H5 model: {h5_files[0].name}")
-        return load_model(str(h5_files[0]))
+@app.route('/satellite.html')
+def satellite():
+    direc = "processed_satellite_images/Delhi_July.png"
+    with open(direc, "rb") as image_file:
+        image = base64.b64encode(image_file.read())
+    image = image.decode('utf-8')
+    return render_template('satellite.html', data=data, image_file=image, months=months, text="Delhi in January 2020")
 
-    elif saved_model_dirs:
-        st.success(f"✅ Found SavedModel directory: {saved_model_dirs[0].name}")
-        return TFSMLayer(str(saved_model_dirs[0]), call_endpoint="serving_default")
+@app.route('/satellite.html', methods=['GET', 'POST'])
+def satelliteimages():
+    place = request.form.get('place')
+    date = request.form.get('date')
+    data = [{'name':'Delhi', "sel": ""}, {'name':'Mumbai', "sel": ""}, {'name':'Kolkata', "sel": ""}, {'name':'Bangalore', "sel": ""}, {'name':'Chennai', "sel": ""}]
+    months = [{"name":"May", "sel": ""}, {"name":"June", "sel": ""}, {"name":"July", "sel": ""}]
+    for item in data:
+        if item["name"] == place:
+            item["sel"] = "selected"
+    
+    for item in months:
+        if item["name"] == date:
+            item["sel"] = "selected"
 
-    else:
-        st.error("❌ No supported model format found in the extracted zip.")
-        raise ValueError("Model not found. Ensure the zip contains .keras, .h5, or a SavedModel folder.")
+    text = place + " in " + date + " 2020"
 
-# Load the model
-model = load_flood_model()
+    direc = "processed_satellite_images/{}_{}.png".format(place, date)
+    with open(direc, "rb") as image_file:
+        image = base64.b64encode(image_file.read())
+    image = image.decode('utf-8')
+    return render_template('satellite.html', data=data, image_file=image, months=months, text=text)
 
-# ----------------------------
-# APP HEADER
-# ----------------------------
-st.title("🌊 Flood Predictor")
-st.markdown("Upload a **satellite image** or select a **state** to predict flood risk. "
-            "View predictions on an **interactive OSM map** 🗺️")
+@app.route('/predicts.html')
+def predicts():
+    return render_template('predicts.html', cities=cities, cityname="Information about the city")
 
-# ----------------------------
-# INPUT OPTIONS
-# ----------------------------
-col1, col2 = st.columns(2)
+@app.route('/predicts.html', methods=["GET", "POST"])
+def get_predicts():
+    try:
+        cityname = request.form["city"]
+        cities = [{'name':'Delhi', "sel": ""}, {'name':'Mumbai', "sel": ""}, {'name':'Kolkata', "sel": ""}, {'name':'Bangalore', "sel": ""}, {'name':'Chennai', "sel": ""}, {'name':'New York', "sel": ""}, {'name':'Los Angeles', "sel": ""}, {'name':'London', "sel": ""}, {'name':'Paris', "sel": ""}, {'name':'Sydney', "sel": ""}, {'name':'Beijing', "sel": ""}]
+        for item in cities:
+            if item['name'] == cityname:
+                item['sel'] = 'selected'
+        print(cityname)
+        URL = "https://geocode.search.hereapi.com/v1/geocode"
+        location = cityname
+        api_key = 'Bwv2FJJQHT4FTQBWFC7IEKRE49lNYtrAti6NK7uJVCY' # Acquire from developer.here.com
+        PARAMS = {'apikey':api_key,'q':location} 
+        # sending get request and saving the response as response object 
+        r = requests.get(url = URL, params = PARAMS) 
+        data = r.json()
+        latitude = data['items'][0]['position']['lat']
+        longitude = data['items'][0]['position']['lng']
+        final = prediction.get_data(latitude, longitude)
 
-with col1:
-    uploaded_img = st.file_uploader("📤 Upload a satellite image", type=["jpg", "jpeg", "png"])
+        final[4] *= 15
+        if str(model.predict([final])[0]) == "0":
+            pred = "Safe"
+        else:
+            pred = "Unsafe"
+        
+        return render_template('predicts.html', cityname="Information about " + cityname, cities=cities, temp=round(final[0], 2), maxt=round(final[1], 2), wspd=round(final[2], 2), cloudcover=round(final[3], 2), percip=round(final[4], 2), humidity=round(final[5], 2), pred = pred)
+    except:
+        return render_template('predicts.html', cities=cities, cityname="Oops, we weren't able to retrieve data for that city.")
 
-with col2:
-    state = st.selectbox("🌍 Or choose a state:", 
-                         ["None", "California", "Texas", "Florida", "Bihar", "Assam", "Kerala", "Odisha"])
-
-# ----------------------------
-# PREDICTION FUNCTION
-# ----------------------------
-def predict_flood(image: Image.Image):
-    img = image.resize((224, 224))  # adjust to model input size
-    img_array = np.array(img) / 255.0
-    img_array = np.expand_dims(img_array, axis=0)
-
-    # Handle both Sequential and TFSMLayer models
-    if isinstance(model, TFSMLayer):
-        preds = model(img_array, training=False)
-    else:
-        preds = model.predict(img_array)
-
-    prob = float(preds[0][0]) if preds.ndim == 2 else float(preds[0])
-    return prob
-
-# ----------------------------
-# HANDLE PREDICTION
-# ----------------------------
-if uploaded_img is not None:
-    image = Image.open(uploaded_img).convert("RGB")
-    st.image(image, caption="Uploaded Image", use_column_width=True)
-
-    with st.spinner("🔍 Analyzing flood risk..."):
-        prob = predict_flood(image)
-
-    st.subheader(f"🌊 Flood Risk Probability: **{prob:.2%}**")
-
-elif state != "None":
-    st.subheader(f"📍 Selected State: {state}")
-    st.info("Flood prediction for states is placeholder — attach state-level risk data later.")
-
-# ----------------------------
-# MAP VISUALIZATION
-# ----------------------------
-st.subheader("🗺️ Flood Risk Map")
-
-# Example: center India (lat=20.59, lon=78.96)
-m = folium.Map(location=[20.59, 78.96], zoom_start=4, tiles="cartodb positron")
-
-# Add a marker if state is chosen
-state_coords = {
-    "California": [36.7783, -119.4179],
-    "Texas": [31.9686, -99.9018],
-    "Florida": [27.9944, -81.7603],
-    "Bihar": [25.0961, 85.3131],
-    "Assam": [26.2006, 92.9376],
-    "Kerala": [10.8505, 76.2711],
-    "Odisha": [20.9517, 85.0985]
-}
-
-if state in state_coords:
-    folium.Marker(state_coords[state], tooltip=f"Flood Risk: {state}").add_to(m)
-
-st_map = st_folium(m, width=700, height=500)
-
+if __name__ == "__main__":
+    app.run(debug=True)
