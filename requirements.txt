@@ -4,6 +4,22 @@ requests
 scikit-learn
 pandas
 numpy
+geopandas
+osmnx
+shapely
+rtree
+pyproj
+rasterio
+rio-cogeo
+folium
+fiona
+fastapi
+uvicorn
+streamlit
+contextily
+mapclassify
+mercantile
+
 
 
 
