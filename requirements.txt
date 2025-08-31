@@ -1,6 +1,9 @@
 flask
 gunicorn
 requests
+scikit-learn
+pandas
+numpy
 
 
 
