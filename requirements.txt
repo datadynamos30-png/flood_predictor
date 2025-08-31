@@ -19,7 +19,6 @@ streamlit
 contextily
 mapclassify
 mercantile
-pip install --upgrade scikit-learn
 
 
 
