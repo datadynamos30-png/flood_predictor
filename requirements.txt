@@ -1,7 +1,7 @@
 flask
 gunicorn
 requests
-scikit-learn
+scikit-learn==0.23.1
 pandas
 numpy
 geopandas
@@ -19,6 +19,7 @@ streamlit
 contextily
 mapclassify
 mercantile
+pip install --upgrade scikit-learn
 
 
 
